@@ -10,9 +10,8 @@ param(
 Write-Host "Download url: $AccUnitUrl"
 
 $TargetOfficeApp = "Access"
-$headers = @{
-    "User-Agent" = "PowerShell"
-}
+. "$PSScriptRoot/Get-GitHubHeaders.ps1"
+$headers = Get-GitHubHeaders
 $release = Invoke-RestMethod -Uri $AccUnitUrl -Headers $headers
 
 # zip url
