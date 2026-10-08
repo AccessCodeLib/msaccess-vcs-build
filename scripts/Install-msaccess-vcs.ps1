@@ -12,9 +12,8 @@ param(
 
 Write-Host "Download url: $vcsUrl"
 
-$headers = @{
-    "User-Agent" = "PowerShell"
-}
+. "$PSScriptRoot/Get-GitHubHeaders.ps1"
+$headers = Get-GitHubHeaders -Uri $vcsUrl
 $release = Invoke-RestMethod -Uri $vcsUrl -Headers $headers
 
 # zip url
