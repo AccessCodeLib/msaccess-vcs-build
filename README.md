@@ -47,6 +47,7 @@ jobs:
 
 ### Example YAML files
 #### GitHub
+* [josef-poetzl/msaccess-vcs-addin: Build-self-hosted (on release)](https://github.com/josef-poetzl/msaccess-vcs-addin/blob/main/.github/workflows/build-for-release.yml)
 * [AccessCodeLib/BuildAccdeExample: Build-self-hosted-O64](https://github.com/AccessCodeLib/BuildAccdeExample/blob/main/.github/workflows/Build-self-hosted-O64.yml)
 * [AccessCodeLib/BuildAccdeExample: Build-self-hosted-O64-O32](https://github.com/AccessCodeLib/BuildAccdeExample/blob/main/.github/workflows/Build-self-hosted-O64-O32.yml): call 64 and 32 runner to get 32 and 64 bit accde
 
