@@ -26,6 +26,14 @@ inputs:
     description: 'run accunit tests after build'
     required: false
     default: false
+  run-vcs-tests:
+    description: 'run msaccess-vcs tests after build (junit xml and log are copied to target-dir)'
+    required: false
+    default: false
+  vcs-test-filter:
+    description: 'filter for msaccess-vcs tests, e.g. "-slow" (empty = all tests)'
+    required: false
+    default: ''
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
@@ -47,6 +55,8 @@ runs:
           -AppConfigFile "${{ inputs.app-config }}" `
           -vcsUrl "${{ inputs.vcs-url }}" `
           -RunAccUnitTests "${{ inputs.run-accunit-tests }}" `
+          -RunVcsTests "${{ inputs.run-vcs-tests }}" `
+          -VcsTestFilter "${{ inputs.vcs-test-filter }}" `
           -FileName "${{ inputs.file-name }}"
 
 outputs:

@@ -70,6 +70,9 @@ You can also run the Runner on your own developer PC for testing purposes.
 ##### Build API and validation
 The build uses the headless API of msaccess-vcs (`BuildHeadless`, [Continuous Integration](https://github.com/joyfullservice/msaccess-vcs-addin/wiki/Continuous-Integration)) (available since msaccess-vcs 5.1). The build log is copied to the target folder (also on failure). To fail a build on your own criteria, set `ValidateAfterBuild` in `vcs-options.json` to a function in the database that returns `True`.
 
+##### Running msaccess-vcs tests
+Set `run-vcs-tests: true` to run the msaccess-vcs tests (`RunTestsHeadless`) right after the build, before the application config is applied. Use `vcs-test-filter` for a filter such as `-slow`. The tests run on a temporary copy of the built file; the step fails if a test fails. The JUnit XML (`test-results.xml`) and the test log are copied to `target-dir`, so they can be published as artifacts. This is independent of `run-accunit-tests`.
+
 ## PowerShell only - Build.ps1
 It is also possible to use only the PowerShell scripts to execute the build process locally.
 
@@ -81,6 +84,8 @@ It is also possible to use only the PowerShell scripts to execute the build proc
 * [string]$AppConfigFile = "", # Default "" => don't change database properties etc.
 * [string]$vcsUrl = "https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest", # empty = don't install msacess-vcs
 * [string]$SetTrustedLocation = 'true' # set trusted location for current folder
+* [string]$RunVcsTests = 'false', # run msaccess-vcs tests (RunTestsHeadless) after the build
+* [string]$VcsTestFilter = '' # filter for msaccess-vcs tests, e.g. "-slow"
 
 ### Examples
 

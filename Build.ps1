@@ -7,7 +7,9 @@ param(
     [string]$RunAccUnitTests = 'false', # path to msaccess-vcs add-in, empty = don't use msaccess-vcs
     [string]$vcsUrl = 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
     [string]$SetTrustedLocation = 'true', # set trusted location for current folder
-    [string]$FileName = '' # empty .. use file name from vcs options
+    [string]$FileName = '', # empty .. use file name from vcs options
+    [string]$RunVcsTests = 'false', # run msaccess-vcs tests (RunTestsHeadless) after the build
+    [string]$VcsTestFilter = '' # filter for msaccess-vcs tests, e.g. "-slow"
 )
 
 
@@ -31,6 +33,11 @@ if ($SetTrustedLocation -and $SetTrustedLocation.ToLower() -eq "true") {
 [bool]$RunAccUnitTestBool = $false
 if ($RunAccUnitTests -and $RunAccUnitTests.ToLower() -eq "true") {
     $RunAccUnitTestBool = $true
+}
+
+[bool]$RunVcsTestsBool = $false
+if ($RunVcsTests -and $RunVcsTests.ToLower() -eq "true") {
+    $RunVcsTestsBool = $true
 }
 
 if ([string]::IsNullOrEmpty($SourceDir) ) {
@@ -101,6 +108,17 @@ Write-Host "-----"
 
 
 $accFilePath = $accdbPath
+
+# Run msaccess-vcs tests before the application is prepared (module removal could remove test modules)
+if ($RunVcsTestsBool) {
+    Write-Host "Run msaccess-vcs tests"
+    $vcsTestResult = & "$PSScriptRoot/scripts/Run-VcsTests.ps1" -AccdbPath "$accdbPath" -Filter "$VcsTestFilter" -VcsAddInPath "$vcsAddInPath" -TargetDir "$TargetDir"
+    if (-not $vcsTestResult.Success) {
+        Write-Error "msaccess-vcs tests failed"
+        exit 1
+    }
+    Write-Host "-----"
+}
 
 # Prepare the application. Only module/reference removal requires an editable .accdb, so it
 # runs before compiling. Procedures and database properties are applied after compiling,
