@@ -29,7 +29,7 @@ inputs:
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
-    default: 'https://api.github.com/repos/josef-poetzl/msaccess-vcs-addin/releases/latest'
+    default: 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest'
   file-name:
     description: 'build this filename, empty = use filename from vcs options'
     required: false

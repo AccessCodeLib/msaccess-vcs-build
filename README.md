@@ -23,8 +23,7 @@ inputs:
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
-    default: 'https://api.github.com/repos/josef-poetzl/msaccess-vcs-addin/releases/latest'
-    # remove to 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest' if Commit db07ef2 released
+    default: 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest'
 ```
 
 Example call:
@@ -43,7 +42,7 @@ jobs:
         source-dir: "./Version Control.accda.src"
         target-dir: "bin"
         compile: "false"
-        vcs-url: "https://api.github.com/repos/josef-poetzl/msaccess-vcs-addin/releases/tags/v4.1.2-build"
+        vcs-url: "https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest"
 ```
 
 ### Example YAML files
@@ -58,14 +57,18 @@ jobs:
 ### Self-hosted runner
 
 #### Requirements
-Install Office with the appropriate bit version and license
+* Install Office with the appropriate bit version and license
+* msaccess-vcs 5.1 or newer (the default `vcs-url` downloads the latest release). Older versions do not provide `BuildHeadless`.
 
 #### Tips
-* Pre-install msaccess-vcs and set the vcs-url parameter to “”.
+* Pre-install msaccess-vcs (version 5.1 or newer) and set the vcs-url parameter to “”.
 * Set the required Trusted Locations
 
 ##### Note
 You can also run the Runner on your own developer PC for testing purposes.
+
+##### Build API and validation
+The build uses the headless API of msaccess-vcs (`BuildHeadless`, [Continuous Integration](https://github.com/joyfullservice/msaccess-vcs-addin/wiki/Continuous-Integration)) (available since msaccess-vcs 5.1). The build log is copied to the target folder (also on failure). To fail a build on your own criteria, set `ValidateAfterBuild` in `vcs-options.json` to a function in the database that returns `True`.
 
 ## PowerShell only - Build.ps1
 It is also possible to use only the PowerShell scripts to execute the build process locally.
@@ -76,7 +79,7 @@ It is also possible to use only the PowerShell scripts to execute the build proc
 * [string]$TargetDir = "", # Folder for output file, default (empty): current folder 
 * [string]$Compile = 'false', # Default to "false" if not specified
 * [string]$AppConfigFile = "", # Default "" => don't change database properties etc.
-* [string]$vcsUrl = "https://api.github.com/repos/josef-poetzl/msaccess-vcs-addin/releases/latest", # empty = don't install msacess-vcs
+* [string]$vcsUrl = "https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest", # empty = don't install msacess-vcs
 * [string]$SetTrustedLocation = 'true' # set trusted location for current folder
 
 ### Examples
@@ -87,7 +90,7 @@ It is also possible to use only the PowerShell scripts to execute the build proc
 ```
 Steps:
 1. download msacesss-vcs
-2. build accdb from source (use file name from msaccess-vcs property file)
+2. build accdb from source via `VCS.BuildHeadless` (file name from msaccess-vcs property file)
 3. prepare accdb: remove modules and references from [Application-Config.json](https://github.com/AccessCodeLib/msaccess-vcs-build/blob/main/examples/Prepare-Application-Config.json)
 4. compile accdb to accde
 5. run procedures and apply database properties from Application-Config.json to the accde

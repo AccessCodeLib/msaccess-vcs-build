@@ -28,9 +28,30 @@ if ($FileName -gt "") {
 $curDir = $(Get-Location)
 $accdbPath = "$curDir\$accdbFileName.accdb"
 
+# Stop only the Access process started by this script (never other MSACCESS.EXE instances)
+Add-Type -Namespace VcsBuild -Name Win32 -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId);
+'@
+
+function Get-AccessProcessId {
+    param($AccessApp)
+    [uint32]$processId = 0
+    [void][VcsBuild.Win32]::GetWindowThreadProcessId([System.IntPtr]$AccessApp.hWndAccessApp(), [ref]$processId)
+    return [int]$processId
+}
+
+function Stop-AccessProcess {
+    param([int]$ProcessId)
+    if ($ProcessId -gt 0) {
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # open/create access file
 $access = New-Object -ComObject Access.Application
 $access.Visible = $true
+$accessProcessId = Get-AccessProcessId -AccessApp $access
 if (-not (Test-Path $accdbPath)) {    
     $access.NewCurrentDatabase($accdbPath)
 } 
@@ -72,35 +93,19 @@ Write-Host "Source: $SourceDir"
 Write-Host "TargetDir: $TargetDir"
 Write-Host ""
 
-Write-Host "Start msaccess-vcs build " -NoNewline
-$access.Run("$addInProcessPath.SetInteractionMode", [ref] 1)
-Write-Host "." -NoNewline
-$null = $access.Run("$addInProcessPath.HandleRibbonCommand", [ref] "btnBuild", [ref] "$SourceDir")
-
-# VCS Build close tempApp and reopen new accdb => check 2x for Forms.Count
-$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-while (($access.Forms.Count -gt 0) -and ($stopwatch.Elapsed.TotalSeconds -lt 30)) {
-    Start-Sleep -Seconds 2
-    Write-Host "." -NoNewline
+Write-Host "Start msaccess-vcs build (BuildHeadless)"
+$buildResult = $null
+try {
+    $json = $access.Run("$addInProcessPath.API", "BuildHeadless", "$SourceDir")
+    $buildResult = $json | ConvertFrom-Json
 }
-$stopwatch.Stop()
-Start-Sleep -Seconds 3
-$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-while (($access.Forms.Count -gt 0) -and ($stopwatch.Elapsed.TotalSeconds -lt 30)) {
-    Start-Sleep -Seconds 2
-    Write-Host "." -NoNewline
+catch {
+    Write-Host "BuildHeadless call failed: $($_.Exception.Message)"
 }
-$stopwatch.Stop()
-Write-Host " completed"
-
-$builtFileName = $access.CurrentProject.Name
-$builtFilePath = $access.CurrentProject.FullName
 
 Start-Sleep -Seconds 1
 Write-Host "Close Access " -NoNewline
-$access.Quit(2)
-Write-Host "." -NoNewline
-Start-Sleep -Seconds 1
+try { $access.Quit(2) } catch { }
 Write-Host "." -NoNewline
 [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($access)
 Remove-Variable access
@@ -108,32 +113,38 @@ Remove-Variable access
 Write-Host "." -NoNewline
 [GC]::WaitForPendingFinalizers()
 
-# Kill any lingering Access processes - see issue #1 (support for msaccess-vcs-addin v5), thanks DecimalTurn
-Get-Process -Name "MSACCESS" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 3
+# MSACCESS.EXE may stay resident after Quit - stop the process started by this script
+Start-Sleep -Seconds 1
+Stop-AccessProcess -ProcessId $accessProcessId
+Start-Sleep -Seconds 2
 
 Write-Host " completed"
 Write-Host ""
 
-if ( ($builtFileName -gt "") -and ($builtFileName -ne "$tempFileName.accdb") ) {
-	Write-Host "Built: $builtFileName ($builtFilePath)"
-} else {
-	Write-Host "Build failed"
-    if ([string]::IsNullOrEmpty($builtFileName)) {
-        Write-Host "   (builtFileName is empty)"
-    }
-    else {
-        Write-Host "   $builtFileName"
-    }
-    if ([string]::IsNullOrEmpty($builtFilePath)) {
-        Write-Host "   (builtFilePath is empty)"
-    } 
-    else {
-	    Write-Host "  $builtFilePath"
-    }
-	exit 1
+# copy build log to TargetDir (also on failure, as a diagnostic artifact)
+if ($buildResult -and $buildResult.logPath -and (Test-Path $buildResult.logPath) -and ($TargetDir -gt "")) {
+    New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null
+    Copy-Item -Path $buildResult.logPath -Destination $TargetDir -Force
+    Write-Host "Build log copied to: $TargetDir"
 }
 
+if (-not $buildResult -or -not $buildResult.success) {
+    Write-Host "Build failed"
+    if (-not $buildResult) {
+        Write-Host "   (no result returned by BuildHeadless)"
+    }
+    else {
+        Write-Host "   $($buildResult.error)"
+        if ($buildResult.logPath) { Write-Host "   Log: $($buildResult.logPath)" }
+    }
+    exit 1
+}
+
+$builtFilePath = $buildResult.databasePath
+$builtFileName = [System.IO.Path]::GetFileName($builtFilePath)
+Write-Host "Built: $builtFileName ($builtFilePath)"
+Write-Host "Errors: $($buildResult.errorCount), Warnings: $($buildResult.warningCount), Duration: $([math]::Round($buildResult.durationMs / 1000, 1)) s"
+Write-Host "Log: $($buildResult.logPath)"
 
 # Wait for a file to become openable with an exclusive lock, or time out.
 # $access.Quit() can return before the MSACCESS process has fully exited and
@@ -171,19 +182,10 @@ if (($TargetDir -gt "") -and ($TargetDir -ne  $builtFilePathDir) ) {
 	New-Item -Path $TargetDir -ItemType Directory -Force | Out-Null
 
     # Make sure the built database is no longer locked before copying it. If it is
-    # still locked after the grace window, stop any lingering MSACCESS process as a
-    # last resort (the CI runner should not have unrelated Access instances open).
+    # still locked after the grace window, stop the Access process started by this script.
     if (-not (Wait-FileUnlocked -Path $builtFilePath -TimeoutSeconds 60)) {
-        Write-Warning "Built file still locked after 60s. Stopping lingering MSACCESS process(es)..."
-        Get-Process -Name MSACCESS -ErrorAction SilentlyContinue | ForEach-Object {
-            try {
-                Stop-Process -Id $_.Id -Force -ErrorAction Stop
-                Write-Host "Stopped MSACCESS pid $($_.Id)"
-            }
-            catch {
-                Write-Warning "Could not stop MSACCESS pid $($_.Id): $($_.Exception.Message)"
-            }
-        }
+        Write-Warning "Built file still locked after 60s. Stopping Access process $accessProcessId..."
+        Stop-AccessProcess -ProcessId $accessProcessId
         $null = Wait-FileUnlocked -Path $builtFilePath -TimeoutSeconds 10
     }
 
