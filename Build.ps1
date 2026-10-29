@@ -5,7 +5,7 @@ param(
     [string]$Compile = 'false', # Default to "false" if not specified
     [string]$AppConfigFile = '', # Default "" => don't change database properties etc.
     [string]$RunAccUnitTests = 'false', # path to msaccess-vcs add-in, empty = don't use msaccess-vcs
-    [string]$vcsUrl = 'https://api.github.com/repos/josef-poetzl/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
+    [string]$vcsUrl = 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
     [string]$SetTrustedLocation = 'true', # set trusted location for current folder
     [string]$FileName = '' # empty .. use file name from vcs options
 )
