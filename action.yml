@@ -26,6 +26,10 @@ inputs:
     description: 'run accunit tests after build'
     required: false
     default: false
+  accunit-junit-xml:
+    description: 'path for AccUnit JUnit XML test results (requires run-accunit-tests), empty = don''t write'
+    required: false
+    default: ''
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
@@ -47,6 +51,7 @@ runs:
           -AppConfigFile "${{ inputs.app-config }}" `
           -vcsUrl "${{ inputs.vcs-url }}" `
           -RunAccUnitTests "${{ inputs.run-accunit-tests }}" `
+          -AccUnitJUnitXml "${{ inputs.accunit-junit-xml }}" `
           -FileName "${{ inputs.file-name }}"
 
 outputs:

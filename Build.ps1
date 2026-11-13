@@ -4,7 +4,8 @@ param(
     [string]$TargetDir = '', # Folder for output file, default (empty): current folder 
     [string]$Compile = 'false', # Default to "false" if not specified
     [string]$AppConfigFile = '', # Default "" => don't change database properties etc.
-    [string]$RunAccUnitTests = 'false', # path to msaccess-vcs add-in, empty = don't use msaccess-vcs
+    [string]$RunAccUnitTests = 'false', # "true" = run AccUnit tests after build
+    [string]$AccUnitJUnitXml = '', # path for AccUnit JUnit XML test results (requires RunAccUnitTests), empty = don't write
     [string]$vcsUrl = 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
     [string]$SetTrustedLocation = 'true', # set trusted location for current folder
     [string]$FileName = '' # empty .. use file name from vcs options
@@ -31,6 +32,9 @@ if ($SetTrustedLocation -and $SetTrustedLocation.ToLower() -eq "true") {
 [bool]$RunAccUnitTestBool = $false
 if ($RunAccUnitTests -and $RunAccUnitTests.ToLower() -eq "true") {
     $RunAccUnitTestBool = $true
+}
+elseif ($AccUnitJUnitXml -gt "") {
+    Write-Warning "AccUnitJUnitXml is ignored because RunAccUnitTests is not enabled"
 }
 
 if ([string]::IsNullOrEmpty($SourceDir) ) {
@@ -148,7 +152,8 @@ if ($RunAccUnitTestBool) {
         Copy-Item -Path $accdbPath -Destination $testAccdbPath -Force
     }
 
-    $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath"
+    # a relative JUnit XML path is resolved against the current folder by Run-AccUnit-Tests.ps1
+    $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath" -JUnitXmlPath "$AccUnitJUnitXml"
 #copy test log to TargetDir
     $testLogFile = $testResult.LogFile
     if ($TargetDir -ne (Get-Location) -and (Test-Path $testLogFile)) {
