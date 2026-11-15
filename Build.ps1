@@ -52,6 +52,148 @@ else {
 }
 
 
+# Build steps: install msaccess-vcs, build, prepare, compile, run AccUnit tests
+# Reads the script parameters and $curDir; variables set here are only used here.
+# exit inside this function ends the script, the finally block below still runs.
+function Invoke-BuildSteps {
+
+    [string]$vcsAddInPath = ""
+    if ($vcsUrl -gt "") {
+    	Write-Host "Install msaccess-vcs"
+        $vcsTargetDir = $curDir.Path
+    	$vcsInstallData = & "$PSScriptRoot/scripts/Install-msaccess-vcs.ps1" -vcsUrl "${vcsUrl}" -TargetDir "$vcsTargetDir" -SetTrustedLocation $false
+        
+        if (-not $vcsInstallData.Success) {
+            Write-Error "Failed to install msaccess-vcs add-in"
+            exit 1
+        }
+        
+        $vcsAddInPath = $vcsInstallData.AddInPath
+    	Write-Host "-----"
+    }
+
+
+    # Build accdb file
+    if (-not ([string]::IsNullOrEmpty($SourceDir))) {
+        Write-Host "Build accdb - TargetDir: $TargetDir"
+        $accdbPath = & "$PSScriptRoot/scripts/Build-Accdb.ps1" -SourceDir $SourceDir -TargetDir "${TargetDir}" -VcsAddInPath $vcsAddInPath -FileName "${FileName}"
+        $accdbPath = "$accdbPath" # simple join if array
+        $accdbPath = $accdbPath.Trim()
+        if (([string]::IsNullOrEmpty($accdbPath)) -or -not (Test-Path $accdbPath)) {
+            Write-Error "Failed to create accdb file"
+            exit 1
+        }
+        Write-Host "Built file: $accdbPath"
+    } 
+    else { # use SourceFile
+        if (-not ([System.IO.Path]::IsPathRooted($SourceFile))) {
+            $SourceFile = Join-Path -Path (Get-Location) -ChildPath $SourceFile.TrimStart('\','/','.')
+        }
+        Write-Host "Use SourceFile: $SourceFile"
+        if (-not (Test-Path $SourceFile)) {
+            Write-Error "Source file not found: $SourceFile"
+            exit 1
+        }
+        $accdbPath = $SourceFile
+    }   
+    Write-Host "-----"
+
+
+    $accFilePath = $accdbPath
+
+    # Prepare the application. Only module/reference removal requires an editable .accdb, so it
+    # runs before compiling. Procedures and database properties are applied after compiling,
+    # directly on the .accde, matching the last release and leaving the source .accdb unaltered.
+    # When not compiling there is no .accde, so every step runs on the .accdb.
+    if ($AppConfigFile -gt "") {
+        $preStage = if ($CompileBool) { "PreCompile" } else { "All" }
+        Write-Host "Prepare application ($preStage) from config file: $AppConfigFile"
+        & "$PSScriptRoot/scripts/Prepare-Application.ps1" -AccessFile "$accdbPath" -ConfigFile "$AppConfigFile" -Stage $preStage
+        Write-Host "-----"
+    }
+
+    if ($CompileBool) {
+        Write-Host "compile accdb"
+        $compileResult = & "$PSScriptRoot/scripts/Compile-Accdb.ps1" -SourceFile "$accdbPath"
+        # Write-Host "accdb: $($result.AccdbPath)"
+        # Write-Host "accde: $($result.AccdePath)"
+        if (-not $compileResult.Success) {
+            Write-Error "Failed to create ACCDE file"
+            exit 1
+        }
+        $accFilePath = $compileResult.AccdePath
+        Write-Host "-----"
+
+        # Run procedures and apply database properties to the compiled .accde.
+        if ($AppConfigFile -gt "") {
+            Write-Host "Prepare application (PostCompile) from config file: $AppConfigFile"
+            & "$PSScriptRoot/scripts/Prepare-Application.ps1" -AccessFile "$accFilePath" -ConfigFile "$AppConfigFile" -Stage PostCompile
+            Write-Host "-----"
+        }
+    }
+
+    # Run AccUnit tests
+    if ($RunAccUnitTestBool) {
+
+        Write-Host "Run AccUnit tests"
+
+        if (-not (Test-Path $accdbPath)) {
+            Write-Error "Accdb file not found: $accdbPath"
+            exit 1
+        }
+        $testAccdbPath = [System.IO.Path]::GetFileName($accdbPath)
+        $testAccdbPath = Join-Path -Path (Get-Location) -ChildPath $testAccdbPath
+        if (-not (Test-Path $testAccdbPath)) {
+            Copy-Item -Path $accdbPath -Destination $testAccdbPath -Force
+        }
+
+        # use installed AccUnitLoader add-in, download and install it if not installed or if AccUnitUrl is set
+        $accUnitAddInPath = Join-Path $env:APPDATA "Microsoft\AddIns\AccUnitLoader.accda"
+        if ([string]::IsNullOrEmpty($AccUnitUrl) -and (Test-Path $accUnitAddInPath)) {
+            Write-Host "Use installed AccUnit add-in: $accUnitAddInPath"
+        }
+        else {
+            if ([string]::IsNullOrEmpty($AccUnitUrl)) {
+                Write-Host "AccUnit add-in not installed: $accUnitAddInPath"
+                $AccUnitUrl = "https://api.github.com/repos/AccessCodeLib/AccUnit/releases/latest"
+            }
+            Write-Host "Install AccUnit"
+            # last pipeline object = result object of Install-AccUnit.ps1
+            $accUnitInstallData = & "$PSScriptRoot/scripts/Install-AccUnit.ps1" -AccUnitUrl "$AccUnitUrl" -TargetRootDir "$($curDir.Path)" | Select-Object -Last 1
+            if (-not $accUnitInstallData.Success) {
+                Write-Error "Failed to install AccUnit add-in"
+                exit 1
+            }
+            $accUnitAddInPath = $accUnitInstallData.AddInPath
+        }
+
+        # a relative JUnit XML path is resolved against the current folder by Run-AccUnit-Tests.ps1
+        $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath" -AccUnitAddInPath "$accUnitAddInPath" -JUnitXmlPath "$AccUnitJUnitXml"
+        if ($null -eq $testResult) {
+            # Run-AccUnit-Tests.ps1 exited before running the tests (message is in the log above)
+            Write-Error "AccUnit tests could not be run"
+            exit 1
+        }
+    #copy test log to TargetDir
+        $testLogFile = $testResult.LogFile
+        if ($TargetDir -ne (Get-Location) -and $testLogFile -and (Test-Path $testLogFile)) {
+            $targetTestLogFile = Join-Path -Path $TargetDir -ChildPath ([System.IO.Path]::GetFileName($testLogFile))
+            Copy-Item -Path $testLogFile -Destination $targetTestLogFile -Force
+            Write-Host "Test log file copied to: $targetTestLogFile"
+        }
+
+        if (-not $testResult.Success) {
+            Write-Host "Tests failed" -ForegroundColor Red
+            if ($testLogFile -and (Test-Path $testLogFile)) {
+                Get-Content $testLogFile | Where-Object { $_ -match "\t(Failed|Error)\t" } | ForEach-Object { Write-Host $_ }
+            }
+            exit 1
+        }
+        Write-Host "-----"
+    }
+}
+
+
 # Prepare environment
 
 $curDir = $(Get-Location)
@@ -63,142 +205,17 @@ if ($SetTrustedLocationBool)
     Write-Host "-----"
 }
 
-[string]$vcsAddInPath = ""
-if ($vcsUrl -gt "") {
-	Write-Host "Install msaccess-vcs"
-    $vcsTargetDir = $curDir.Path
-	$vcsInstallData = & "$PSScriptRoot/scripts/Install-msaccess-vcs.ps1" -vcsUrl "${vcsUrl}" -TargetDir "$vcsTargetDir" -SetTrustedLocation $false
-    
-    if (-not $vcsInstallData.Success) {
-        Write-Error "Failed to install msaccess-vcs add-in"
-        exit 1
-    }
-    
-    $vcsAddInPath = $vcsInstallData.AddInPath
-	Write-Host "-----"
+try {
+    Invoke-BuildSteps
 }
-
-
-# Build accdb file
-if (-not ([string]::IsNullOrEmpty($SourceDir))) {
-    Write-Host "Build accdb - TargetDir: $TargetDir"
-    $accdbPath = & "$PSScriptRoot/scripts/Build-Accdb.ps1" -SourceDir $SourceDir -TargetDir "${TargetDir}" -VcsAddInPath $vcsAddInPath -FileName "${FileName}"
-    $accdbPath = "$accdbPath" # simple join if array
-    $accdbPath = $accdbPath.Trim()
-    if (([string]::IsNullOrEmpty($accdbPath)) -or -not (Test-Path $accdbPath)) {
-        Write-Error "Failed to create accdb file"
-        exit 1
-    }
-    Write-Host "Built file: $accdbPath"
-} 
-else { # use SourceFile
-    if (-not ([System.IO.Path]::IsPathRooted($SourceFile))) {
-        $SourceFile = Join-Path -Path (Get-Location) -ChildPath $SourceFile.TrimStart('\','/','.')
-    }
-    Write-Host "Use SourceFile: $SourceFile"
-    if (-not (Test-Path $SourceFile)) {
-        Write-Error "Source file not found: $SourceFile"
-        exit 1
-    }
-    $accdbPath = $SourceFile
-}   
-Write-Host "-----"
-
-
-$accFilePath = $accdbPath
-
-# Prepare the application. Only module/reference removal requires an editable .accdb, so it
-# runs before compiling. Procedures and database properties are applied after compiling,
-# directly on the .accde, matching the last release and leaving the source .accdb unaltered.
-# When not compiling there is no .accde, so every step runs on the .accdb.
-if ($AppConfigFile -gt "") {
-    $preStage = if ($CompileBool) { "PreCompile" } else { "All" }
-    Write-Host "Prepare application ($preStage) from config file: $AppConfigFile"
-    & "$PSScriptRoot/scripts/Prepare-Application.ps1" -AccessFile "$accdbPath" -ConfigFile "$AppConfigFile" -Stage $preStage
-    Write-Host "-----"
-}
-
-if ($CompileBool) {
-    Write-Host "compile accdb"
-    $compileResult = & "$PSScriptRoot/scripts/Compile-Accdb.ps1" -SourceFile "$accdbPath"
-    # Write-Host "accdb: $($result.AccdbPath)"
-    # Write-Host "accde: $($result.AccdePath)"
-    if (-not $compileResult.Success) {
-        Write-Error "Failed to create ACCDE file"
-        exit 1
-    }
-    $accFilePath = $compileResult.AccdePath
-    Write-Host "-----"
-
-    # Run procedures and apply database properties to the compiled .accde.
-    if ($AppConfigFile -gt "") {
-        Write-Host "Prepare application (PostCompile) from config file: $AppConfigFile"
-        & "$PSScriptRoot/scripts/Prepare-Application.ps1" -AccessFile "$accFilePath" -ConfigFile "$AppConfigFile" -Stage PostCompile
+finally {
+    # clean up (also on exit 1 and terminating errors)
+    if ($SetTrustedLocationBool)
+    {
+        Write-Host "Remove trusted location: $curDir"
+        & "$PSScriptRoot/scripts/Remove-TrustedLocation.ps1" "$tempTrustedLocationName" 
         Write-Host "-----"
     }
-}
-
-# Run AccUnit tests
-if ($RunAccUnitTestBool) {
-
-    Write-Host "Run AccUnit tests"
-
-    if (-not (Test-Path $accdbPath)) {
-        Write-Error "Accdb file not found: $accdbPath"
-        exit 1
-    }
-    $testAccdbPath = [System.IO.Path]::GetFileName($accdbPath)
-    $testAccdbPath = Join-Path -Path (Get-Location) -ChildPath $testAccdbPath
-    if (-not (Test-Path $testAccdbPath)) {
-        Copy-Item -Path $accdbPath -Destination $testAccdbPath -Force
-    }
-
-    # use installed AccUnitLoader add-in, download and install it if not installed or if AccUnitUrl is set
-    $accUnitAddInPath = Join-Path $env:APPDATA "Microsoft\AddIns\AccUnitLoader.accda"
-    if ([string]::IsNullOrEmpty($AccUnitUrl) -and (Test-Path $accUnitAddInPath)) {
-        Write-Host "Use installed AccUnit add-in: $accUnitAddInPath"
-    }
-    else {
-        if ([string]::IsNullOrEmpty($AccUnitUrl)) {
-            Write-Host "AccUnit add-in not installed: $accUnitAddInPath"
-            $AccUnitUrl = "https://api.github.com/repos/AccessCodeLib/AccUnit/releases/latest"
-        }
-        Write-Host "Install AccUnit"
-        # last pipeline object = result object of Install-AccUnit.ps1
-        $accUnitInstallData = & "$PSScriptRoot/scripts/Install-AccUnit.ps1" -AccUnitUrl "$AccUnitUrl" -TargetRootDir "$($curDir.Path)" | Select-Object -Last 1
-        if (-not $accUnitInstallData.Success) {
-            Write-Error "Failed to install AccUnit add-in"
-            exit 1
-        }
-        $accUnitAddInPath = $accUnitInstallData.AddInPath
-    }
-
-    # a relative JUnit XML path is resolved against the current folder by Run-AccUnit-Tests.ps1
-    $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath" -AccUnitAddInPath "$accUnitAddInPath" -JUnitXmlPath "$AccUnitJUnitXml"
-#copy test log to TargetDir
-    $testLogFile = $testResult.LogFile
-    if ($TargetDir -ne (Get-Location) -and (Test-Path $testLogFile)) {
-        $targetTestLogFile = Join-Path -Path $TargetDir -ChildPath ([System.IO.Path]::GetFileName($testLogFile))
-        Copy-Item -Path $testLogFile -Destination $targetTestLogFile -Force
-        Write-Host "Test log file copied to: $targetTestLogFile"
-    }
-
-    if (-not $testResult.Success) {
-        Write-Host "Tests failed" -ForegroundColor Red
-        if (Test-Path $testLogFile) {
-            Get-Content $testLogFile | Where-Object { $_ -match "\t(Failed|Error)\t" } | ForEach-Object { Write-Host $_ }
-        }
-        exit 1
-    }
-    Write-Host "-----"
-}
-
-# clean up
-if ($SetTrustedLocationBool)
-{
-    Write-Host "Remove trusted location: $curDir"
-    & "$PSScriptRoot/scripts/Remove-TrustedLocation.ps1" "$tempTrustedLocationName" 
-    Write-Host "-----"
 }
 
 exit 0
