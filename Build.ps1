@@ -6,6 +6,7 @@ param(
     [string]$AppConfigFile = '', # Default "" => don't change database properties etc.
     [string]$RunAccUnitTests = 'false', # "true" = run AccUnit tests after build
     [string]$AccUnitJUnitXml = '', # path for AccUnit JUnit XML test results (requires RunAccUnitTests), empty = don't write
+    [string]$AccUnitUrl = '', # AccUnit release url, empty = use installed AccUnitLoader add-in, download latest release if not installed
     [string]$vcsUrl = 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
     [string]$SetTrustedLocation = 'true', # set trusted location for current folder
     [string]$FileName = '' # empty .. use file name from vcs options
@@ -152,8 +153,28 @@ if ($RunAccUnitTestBool) {
         Copy-Item -Path $accdbPath -Destination $testAccdbPath -Force
     }
 
+    # use installed AccUnitLoader add-in, download it if not installed or if AccUnitUrl is set
+    $accUnitAddInPath = Join-Path $env:APPDATA "Microsoft\AddIns\AccUnitLoader.accda"
+    if ([string]::IsNullOrEmpty($AccUnitUrl) -and (Test-Path $accUnitAddInPath)) {
+        Write-Host "Use installed AccUnit add-in: $accUnitAddInPath"
+    }
+    else {
+        if ([string]::IsNullOrEmpty($AccUnitUrl)) {
+            Write-Host "AccUnit add-in not installed: $accUnitAddInPath"
+            $AccUnitUrl = "https://api.github.com/repos/AccessCodeLib/AccUnit/releases/latest"
+        }
+        Write-Host "Install AccUnit"
+        # last pipeline object = result object of Install-AccUnit.ps1
+        $accUnitInstallData = & "$PSScriptRoot/scripts/Install-AccUnit.ps1" -AccUnitUrl "$AccUnitUrl" -TargetRootDir "$($curDir.Path)" -SetTrustedLocation $false | Select-Object -Last 1
+        if (-not $accUnitInstallData.Success) {
+            Write-Error "Failed to install AccUnit add-in"
+            exit 1
+        }
+        $accUnitAddInPath = $accUnitInstallData.AddInPath
+    }
+
     # a relative JUnit XML path is resolved against the current folder by Run-AccUnit-Tests.ps1
-    $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath" -JUnitXmlPath "$AccUnitJUnitXml"
+    $testResult = & "$PSScriptRoot/scripts/Run-AccUnit-Tests.ps1" -AccdbPath "$testAccdbPath" -AccUnitAddInPath "$accUnitAddInPath" -JUnitXmlPath "$AccUnitJUnitXml"
 #copy test log to TargetDir
     $testLogFile = $testResult.LogFile
     if ($TargetDir -ne (Get-Location) -and (Test-Path $testLogFile)) {

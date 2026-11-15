@@ -30,6 +30,10 @@ inputs:
     description: 'path for AccUnit JUnit XML test results (requires run-accunit-tests), empty = don''t write'
     required: false
     default: ''
+  accunit-url:
+    description: 'AccUnit release url, empty = use installed AccUnitLoader add-in, download latest release if not installed'
+    required: false
+    default: ''
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
@@ -52,6 +56,7 @@ runs:
           -vcsUrl "${{ inputs.vcs-url }}" `
           -RunAccUnitTests "${{ inputs.run-accunit-tests }}" `
           -AccUnitJUnitXml "${{ inputs.accunit-junit-xml }}" `
+          -AccUnitUrl "${{ inputs.accunit-url }}" `
           -FileName "${{ inputs.file-name }}"
 
 outputs:
