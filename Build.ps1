@@ -6,7 +6,7 @@ param(
     [string]$AppConfigFile = '', # Default "" => don't change database properties etc.
     [string]$RunAccUnitTests = 'false', # "true" = run AccUnit tests after build
     [string]$AccUnitJUnitXml = '', # path for AccUnit JUnit XML test results (requires RunAccUnitTests), empty = don't write
-    [string]$AccUnitUrl = '', # AccUnit release url, empty = use installed AccUnitLoader add-in, download latest release if not installed
+    [string]$AccUnitUrl = '', # AccUnit release url, empty = use installed AccUnitLoader add-in, download and install latest release if not installed
     [string]$vcsUrl = 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest', # empty = don't install msacess-vcs
     [string]$SetTrustedLocation = 'true', # set trusted location for current folder
     [string]$FileName = '' # empty .. use file name from vcs options
@@ -153,7 +153,7 @@ if ($RunAccUnitTestBool) {
         Copy-Item -Path $accdbPath -Destination $testAccdbPath -Force
     }
 
-    # use installed AccUnitLoader add-in, download it if not installed or if AccUnitUrl is set
+    # use installed AccUnitLoader add-in, download and install it if not installed or if AccUnitUrl is set
     $accUnitAddInPath = Join-Path $env:APPDATA "Microsoft\AddIns\AccUnitLoader.accda"
     if ([string]::IsNullOrEmpty($AccUnitUrl) -and (Test-Path $accUnitAddInPath)) {
         Write-Host "Use installed AccUnit add-in: $accUnitAddInPath"
@@ -165,7 +165,7 @@ if ($RunAccUnitTestBool) {
         }
         Write-Host "Install AccUnit"
         # last pipeline object = result object of Install-AccUnit.ps1
-        $accUnitInstallData = & "$PSScriptRoot/scripts/Install-AccUnit.ps1" -AccUnitUrl "$AccUnitUrl" -TargetRootDir "$($curDir.Path)" -SetTrustedLocation $false | Select-Object -Last 1
+        $accUnitInstallData = & "$PSScriptRoot/scripts/Install-AccUnit.ps1" -AccUnitUrl "$AccUnitUrl" -TargetRootDir "$($curDir.Path)" | Select-Object -Last 1
         if (-not $accUnitInstallData.Success) {
             Write-Error "Failed to install AccUnit add-in"
             exit 1

@@ -31,7 +31,7 @@ inputs:
     required: false
     default: ''
   accunit-url:
-    description: 'AccUnit release url, empty = use installed AccUnitLoader add-in, download latest release if not installed'
+    description: 'AccUnit release url, empty = use installed AccUnitLoader add-in, download and install latest release if not installed'
     required: false
     default: ''
   vcs-url:
