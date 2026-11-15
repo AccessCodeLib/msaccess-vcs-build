@@ -20,11 +20,35 @@ inputs:
     description: 'create accde file'
     required: false
     default: false
+  app-config:
+    description: 'application config file (set database properties, run procedures, etc.)'
+    required: false
+    default: ''
+  run-accunit-tests:
+    description: 'run accunit tests after build'
+    required: false
+    default: false
+  accunit-junit-xml:
+    description: 'path for AccUnit JUnit XML test results (requires run-accunit-tests), empty = don''t write'
+    required: false
+    default: ''
+  accunit-url:
+    description: 'AccUnit release url, empty = use installed AccUnitLoader add-in, download and install latest release if not installed'
+    required: false
+    default: ''
   vcs-url:
     description: 'msaccess-vcs release url'
     required: false
     default: 'https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest'
+  file-name:
+    description: 'build this filename, empty = use filename from vcs options'
+    required: false
+    default: ''
 ```
+
+`accunit-junit-xml` requires an AccUnitLoader add-in with JUnit XML support ([AccessCodeLib/AccUnit#84](https://github.com/AccessCodeLib/AccUnit/issues/84)). If the file is not created, a warning is written to the log.
+
+AccUnit tests use the installed AccUnitLoader add-in (`%APPDATA%\Microsoft\AddIns\AccUnitLoader.accda`). If it is not installed, the latest [AccUnit release](https://github.com/AccessCodeLib/AccUnit/releases/latest) is downloaded and installed like `AccUnitLoader_Install.vbs` does it (compiled into `%APPDATA%\Microsoft\AddIns` and registered as menu add-in), so following runs use the installed add-in. Set `accunit-url` to always download and install from this url (e.g. to update or to use a specific release).
 
 Example call:
 ```
@@ -79,6 +103,9 @@ It is also possible to use only the PowerShell scripts to execute the build proc
 * [string]$TargetDir = "", # Folder for output file, default (empty): current folder 
 * [string]$Compile = 'false', # Default to "false" if not specified
 * [string]$AppConfigFile = "", # Default "" => don't change database properties etc.
+* [string]$RunAccUnitTests = 'false', # "true" = run AccUnit tests after build
+* [string]$AccUnitJUnitXml = "", # path for AccUnit JUnit XML test results (requires RunAccUnitTests), empty = don't write
+* [string]$AccUnitUrl = "", # AccUnit release url, empty = use installed AccUnitLoader add-in, download and install latest release if not installed
 * [string]$vcsUrl = "https://api.github.com/repos/joyfullservice/msaccess-vcs-addin/releases/latest", # empty = don't install msacess-vcs
 * [string]$SetTrustedLocation = 'true' # set trusted location for current folder
 

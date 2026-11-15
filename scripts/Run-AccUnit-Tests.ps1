@@ -1,9 +1,10 @@
 #
-# build accdb from source
+# run AccUnit tests
 #
 param(
     [string]$AccdbPath,
-    [string]$AccUnitAddInPath = "" # empty = use default path (installed version)  
+    [string]$AccUnitAddInPath = "", # empty = use default path (installed version)
+    [string]$JUnitXmlPath = "" # empty = don't write JUnit XML test results (requires AccUnitLoader with JUnit XML support)
 )
 
 if ([string]::IsNullOrEmpty($AccdbPath) ) {
@@ -26,7 +27,7 @@ if ([string]::IsNullOrEmpty($AccUnitAddInPath)) {
     $addInFolder = Join-Path $appdata "Microsoft\AddIns"
     $AccUnitAddInPath = Join-Path $addInFolder "AccUnitLoader.accda"
 }
-elseif (($AccUnitAddInPath -gt "") -and -not ([System.IO.Path]::IsPathRooted($AccUnitAddInPath)) ) {
+elseif (-not ([System.IO.Path]::IsPathRooted($AccUnitAddInPath)) ) {
     $AccUnitAddInPath = Join-Path -Path (Get-Location) -ChildPath $AccUnitAddInPath
     if ($AccUnitAddInPath -match '[\\/][.][\\/]')
     {
@@ -34,16 +35,16 @@ elseif (($AccUnitAddInPath -gt "") -and -not ([System.IO.Path]::IsPathRooted($Ac
     }
 }
 
-[string]$addInProcedurePath = ""
-if ($AccUnitAddInPath -gt "") {
-    $addInProcedureCallRoot = [System.IO.Path]::ChangeExtension($AccUnitAddInPath, "").TrimEnd('.')   
+if (-not [string]::IsNullOrEmpty($JUnitXmlPath) -and -not ([System.IO.Path]::IsPathRooted($JUnitXmlPath)) ) {
+    # resolve here, otherwise Access resolves it against its own working directory
+    $JUnitXmlPath = Join-Path -Path (Get-Location) -ChildPath $JUnitXmlPath
+    if ($JUnitXmlPath -match '[\\/][.][\\/]')
+    {
+        $JUnitXmlPath = $JUnitXmlPath -replace '[\\/][.][\\/]', '\'
+    }
 }
-else {
-    $appdata = $env:APPDATA
-    $addInFolder = Join-Path $appdata "Microsoft\AddIns"
-    $addInProcedurePath = Join-Path $addInFolder "AccUnitLoader"
-    $AccUnitAddInPath = "$addInProcedureCallRoot.accda"
-}
+
+$addInProcedureCallRoot = [System.IO.Path]::ChangeExtension($AccUnitAddInPath, "").TrimEnd('.')
 if (-not (Test-Path $AccUnitAddInPath)) {
     Write-Host "AccUnit add-in not found: $AccUnitAddInPath"
     Write-Host "Please install AccUnitLoader add-in first."
@@ -52,6 +53,9 @@ if (-not (Test-Path $AccUnitAddInPath)) {
 
 Write-Host "Add-in path: $AccUnitAddInPath"
 Write-Host "File to test: $AccdbPath"
+if (-not [string]::IsNullOrEmpty($JUnitXmlPath)) {
+    Write-Host "JUnit XML file: $JUnitXmlPath"
+}
 Write-Host ""
 
 $access = New-Object -ComObject Access.Application
@@ -59,7 +63,15 @@ $access.Visible = $true
 $access.OpenCurrentDatabase($AccdbPath)
 
 Write-Host "Run Tests ..." -NoNewline
-$result = $access.Run("$addInProcedureCallRoot.AutomatedTestRun")
+if ([string]::IsNullOrEmpty($JUnitXmlPath)) {
+    # keep the call without arguments: works with AccUnitLoader versions without JUnit XML support
+    $result = $access.Run("$addInProcedureCallRoot.AutomatedTestRun")
+}
+else {
+    # Application.Run only passes positional arguments => pass the first three as well
+    # 3 = LogFile + DebugPrint (default of AutomatedTestRun)
+    $result = $access.Run("$addInProcedureCallRoot.AutomatedTestRun", "", 3, $false, $JUnitXmlPath)
+}
 Write-Host " completed"
 Write-Host "Tests success: $result"
 Write-Host "Test result:"
@@ -77,6 +89,18 @@ if (Test-Path $logFile) {
     Write-Host "Log file not found: $logFile"
 }
 Write-Host ""
+
+$jUnitXmlFile = $null
+if (-not [string]::IsNullOrEmpty($JUnitXmlPath)) {
+    if (Test-Path $JUnitXmlPath) {
+        $jUnitXmlFile = $JUnitXmlPath
+        Write-Host "JUnit XML test results: $jUnitXmlFile"
+    }
+    else {
+        Write-Warning "JUnit XML file not created: $JUnitXmlPath (AccUnitLoader with JUnit XML support required, see AccessCodeLib/AccUnit#84)"
+    }
+    Write-Host ""
+}
 
 Start-Sleep -Seconds 1
 
@@ -96,4 +120,5 @@ Write-Host ""
 return [PSCustomObject]@{
     Success = $result
     LogFile = $logFile
+    JUnitXmlFile = $jUnitXmlFile
 }
